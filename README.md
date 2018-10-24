@@ -10,11 +10,6 @@ The **Projects** are also included in their own folders:
 
 
 
-2. [Deep Learning: Flower Species Image Classifier
-+ Designed a flower classifier with PyTorch (ResNet, VGG, CUDA, Command Line App)
-+ Achieved 90\% accuracy, performed sanity check with visualization (Matplotlib)) ](https://github.com/SophieGarden/DataScience_NanoDegree/tree/master/Project2_flower_species_image_classifier)
+2. [Deep Learning: Flower Species Image Classifier: Designed a flower classifier with PyTorch (ResNet, VGG, CUDA, Command Line App); Achieved 90\% accuracy, performed sanity check with visualization (Matplotlib)) ](https://github.com/SophieGarden/DataScience_NanoDegree/tree/master/Project2_flower_species_image_classifier)
 
-3. [Unsupervised Learning: Customer Identification for Mail-Order Sales Company
-+ Identified core customers by interpreting the differences between the clusters for the
-general population and that of customers (PCA, K-Means)
-+ Built pipeline includes data cleaning, feature engineering, modeling, clustering ](https://github.com/SophieGarden/DataScience_NanoDegree/tree/master/Project3_identify_groups)
+3. [Unsupervised Learning: Customer Identification for Mail-Order Sales Company: Identified core customers by interpreting the differences between the clusters for the general population and that of customers (PCA, K-Means); Built pipeline includes data cleaning, feature engineering, modeling, clustering ](https://github.com/SophieGarden/DataScience_NanoDegree/tree/master/Project3_identify_groups)
