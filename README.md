@@ -6,7 +6,7 @@ The **Exercises** are included in each folder.
 
 The **Projects** are also included in their own folders:
 
-1. [Supervised Learning: finding charity donors, extracted feature importance, using data collected from the 1994 U.S. Census (Naive Bayes, Random Forest, and SVM) ](https://github.com/SophieGarden/DataScience_NanoDegree/tree/master/finding_donors)
+1. [Supervised Learning: finding charity donors, extracted feature importance, using data collected from the 1994 U.S. Census (Naive Bayes, Random Forest, and SVM) ](https://github.com/SophieGarden/DataScience_NanoDegree/tree/master/Project1_finding_donors)
 
 
 
