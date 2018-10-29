@@ -28,7 +28,7 @@ from collections import OrderedDict
 def parse_args():
     parser = argparse.ArgumentParser(description="Train a model(neural network) on a dataset of images and saves it to a checkpoint for future predicitons")
     parser.add_argument('--data_root', default='flowers', type=str, help='set the data dir')
-    parser.add_argument('--model', default='vgg11', type=str, help='choose the model architecture')
+    parser.add_argument('--model', default='vgg', type=str, help='choose the model architecture')
     parser.add_argument('--lr', default=0.001, type=float, help='learning rate')
     parser.add_argument('--hidden_units', default=1000, nargs='+', type=int, help='list of integers, the sizes of the hidden layers')
     parser.add_argument('--epochs', default=3, type=int, help='num of training epochs')
@@ -52,37 +52,67 @@ def main():
     print('Learning rate: {}'.format(lr))
     print('Epochs:        {}'.format(epochs))
 
-    # load the datase
-    # Load the pretrained model from pytorch
-    if model_name == 'vgg11':
-        model = models.vgg11_bn(pretrained=True)
-        # model.load_state_dict(torch.load("../input/vgg16bn/vgg16_bn.pth"))
-        # print(model.classifier[6].out_features) # 1000
-
-        # Freeze training for all layers,# Newly created modules have require_grad=True by default
-        for param in model.features.parameters():
-            param.require_grad = False
-        classifier = nn.Sequential(OrderedDict([
-                              ('fc1', nn.Linear(25088, hidden_units)),
-                              ('relu', nn.ReLU()),
-                              ('dropout1', nn.Dropout(0.5)),
-                              ('output', nn.Linear(hidden_units, 102))
-                              ]))
-
-        model.classifier = classifier
-        criterion = nn.CrossEntropyLoss()
-
-        # Observe that all parameters are being optimized
-        optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9)
-
-        # Decay LR by a factor of 0.1 every 7 epochs
-        exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
+    # Set the device
+    device = torch.device("cuda:0" if gpu_mode==True else "cpu")
 
     # load data
     image_datasets, dataset_sizes, dataloaders = load_data(data_dir)
+
+    # Load the pretrained model from pytorch
+
+    if model_name == 'resnet':
+        print('resnet18')
+        model = models.resnet18(pretrained=True)
+        num_in_features = model.fc.in_features
+        print('num_in_features:', num_in_features)
+
+    elif model_name == 'vgg':
+        print('vgg11_bn')
+        model = models.vgg11_bn(pretrained=True)
+        num_in_features = model.classifier[0].in_features
+        print('num_in_features:', num_in_features)
+
+    else:
+        print("Unknown model, please choose 'resnet' or 'vgg'")
+
+
+    # Freeze training for all layers,# Newly created modules have require_grad=True by default
+    for param in model.parameters():
+        param.require_grad = False
+    # build the classifier
+    classifier = nn.Sequential(OrderedDict([
+                      ('fc1', nn.Linear(num_in_features, 1000)),
+                      ('relu', nn.ReLU()),
+                      ('dropout1', nn.Dropout(0.5)),
+                      ('output', nn.Linear(1000, 102)),
+                      ('softmax', nn.LogSoftmax(dim=1))
+                      ]))
+
+    if model_name == 'resnet':
+        model.fc = classifier
+        # Only train the classifier parameters, feature parameters are frozen
+        #optimizer = optim.Adam(model.fc.parameters(), lr=lr)
+        optimizer = optim.SGD(model.fc.parameters(), lr=lr, momentum=0.9)
+        exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
+
+    elif model_name == 'vgg':
+        model.classifier = classifier
+        # Observe that all parameters are being optimized
+        optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9)
+        # Decay LR by a factor of 0.1 every 7 epochs
+        exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
+
+        print(model.classifier)
+    else:
+        pass
+
+
+
+    criterion = nn.CrossEntropyLoss()
     #train model
     model_ft = train_model(model, criterion, optimizer, exp_lr_scheduler,
-                       epochs, dataset_sizes, dataloaders)
+                       epochs, dataset_sizes, dataloaders, device)
+
     # test model: Do validation on the test set
     correct = 0
     total = 0
@@ -90,26 +120,26 @@ def main():
     with torch.no_grad():
 
         for images, labels in dataloaders['test']:
-            images, labels = images.to('cuda'), labels.to('cuda')
+            images, labels = images.to(device), labels.to(device)
             outputs = model(images)
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
-
-    #print('Accuracy of the network on the 819 test images: %d %%' % (100 * correct / total))
-
     print("Accuracy of the network on the {} test images: {}%".format(dataset_sizes['test'], round(100 * correct / total, 1)))
 
     # Save the checkpoint
     model.class_to_idx = image_datasets['train'].class_to_idx
 
-    checkpoint = {'number_of_epochs': epochs,
-                  'mapping_classes_to_indices':image_datasets['train'].class_to_idx,
-                  'model_classifier': model.classifier,
-                  'model_state_dict': model.state_dict(),
-                  'model_class_to_inx': model.class_to_idx,
-                  'optimizer_state_dict':optimizer.state_dict(),
-                  }
+    checkpoint = {'input_size': (3, 224, 224),
+                  'output_size': 102,
+                  'learning_rate': lr,
+                  'model_name': model_name,
+                  'classifier': classifier,
+                  'state_dict': model.state_dict(),
+                  'optimizer': optimizer.state_dict(),
+                  'exp_lr_scheduler':exp_lr_scheduler.state_dict(),
+                  'epochs': epochs,
+                  'class_to_idx': model.class_to_idx}
 
     torch.save(checkpoint, 'checkpoint.pth')
 
@@ -175,14 +205,15 @@ def load_data(data_dir):
     return image_datasets, dataset_sizes, dataloaders
 
 
-def train_model(model, criterion, optimizer, scheduler, num_epochs, dataset_sizes, dataloaders):
+
+def train_model(model, criterion, optimizer, scheduler, num_epochs, dataset_sizes, dataloaders, device):
     since = time.time()
 
     best_model_wts = copy.deepcopy(model.state_dict())
     best_acc = 0.0
-    model.to('cuda')
+    model.to(device)
     for epoch in range(num_epochs):
-        print('Epoch {}/{}'.format(epoch, num_epochs - 1))
+        print('Epoch {}/{}'.format(epoch+1, num_epochs))
         print('-' * 10)
 
         # Each epoch has a training and validation phase
@@ -198,8 +229,8 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs, dataset_size
 
             # Iterate over data.
             for inputs, labels in dataloaders[phase]:
-                inputs = inputs.to('cuda')
-                labels = labels.to('cuda')
+                inputs = inputs.to(device)
+                labels = labels.to(device)
 
                 # zero the parameter gradients
                 optimizer.zero_grad()
@@ -241,7 +272,6 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs, dataset_size
     # load best model weights
     model.load_state_dict(best_model_wts)
     return model
-
 
 
 if __name__ == '__main__':

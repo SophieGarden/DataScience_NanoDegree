@@ -48,30 +48,7 @@ def main():
     print('Image path:      {}'.format(image_path))
 
 
-    model_l = load_checkpoint(checkpoint)
-    model_l.class_to_idx
-
-
-
-    # #test model_l see if the test restuls match model
-    # correct = 0
-    # total = 0
-    # model_l.to('cuda')
-    # model_l.eval()
-    # with torch.no_grad():
-    #
-    #     for images, labels in dataloaders['test']:
-    #         images, labels = images.to('cuda'), labels.to('cuda')
-    #         outputs = model_l(images)
-    #         _, predicted = torch.max(outputs.data, 1)
-    #         total += labels.size(0)
-    #         correct += (predicted == labels).sum().item()
-    #
-    # #print('Accuracy of the network on the 819 test images: %d %%' % (100 * correct / total))
-    #
-    # print("Accuracy of the network on the {} test images: {}%".format(dataset_sizes['test'], round(100 * correct / total, 1)))
-
-
+    model_l = load_checkpoint('checkpoint.pth')
 
     #Sanity checkpoint# Display an image along with the top 5 classes
     im_path = image_path
@@ -83,7 +60,10 @@ def main():
     with open('cat_to_name.json', 'r') as f:
         cat_to_name = json.load(f)
 
-    probs, classes = predict(im_path, model_l,top_k)
+    # Set the device
+    device = torch.device("cuda:0" if gpu_mode==True else "cpu")
+
+    probs, classes = predict(im_path, model_l,top_k, device)
     print(probs, classes)
     names = [cat_to_name[c] for c in classes]
     print(names)
@@ -94,13 +74,34 @@ def main():
 def load_checkpoint(filepath):
     checkpoint = torch.load(filepath)
 
-    model = models.vgg11_bn(pretrained=True)
-    model.classifier = checkpoint['model_classifier']
-    model.load_state_dict(checkpoint['model_state_dict'])
-    model.class_to_idx = checkpoint['model_class_to_inx']
-    #optimizer.state_dict(checkpoint['optimizer_state_dict'])
-    return model
+    input_size = checkpoint['input_size']
+    output_size = checkpoint['output_size']
 
+    model_name = checkpoint['model_name']
+    classifier = checkpoint['classifier']
+    class_to_idx = checkpoint['class_to_idx']
+    model_state_dict = checkpoint['state_dict']
+
+    if model_name == 'resnet':
+        print('resnet18')
+        model = models.resnet18(pretrained=True)
+        model.fc = classifier
+
+    elif model_name == 'vgg':
+        print('vgg11_bn')
+        model = models.vgg11_bn(pretrained=True)
+        model.classifier = classifier
+
+    model.class_to_idx = class_to_idx
+    model.load_state_dict(model_state_dict)
+    # lr = checkpoint['learning_rate']
+    # epochs = checkpoint['epochs']
+    # optimizer = optim.SGD(model.fc.parameters(), lr=lr, momentum=0.9)
+    # exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
+    # optimizer.load_state_dict(checkpoint['optimizer'])
+    # exp_lr_scheduler.load_state_dict(checkpoint['exp_lr_scheduler'])
+
+    return model
 
 
 
@@ -109,6 +110,7 @@ def process_image(image):
     ''' Scales, crops, and normalizes a PIL image for a PyTorch model,
         returns an Numpy array
     '''
+
 
     # TODO: Process a PIL image for use in a PyTorch model
     #resize
@@ -127,6 +129,7 @@ def process_image(image):
     image = image.crop(box = (left, top, right, bottom))
 #     image.crop(box = (16, 16, 240, 240))
 
+
     #normalize
     np_image = np.array(image)/255
 
@@ -139,7 +142,7 @@ def process_image(image):
 
 
 
-def predict(image_path, model, topk=5):
+def predict(image_path, model, topk, device):
     ''' Predict the class (or classes) of an image using a trained deep learning model.
     '''
 
@@ -147,14 +150,17 @@ def predict(image_path, model, topk=5):
     im = Image.open(image_path)
     pi_im = process_image(im)
 
-    model.to('cuda')
+    model.to(device)
     model.eval()
     with torch.no_grad():
         images = torch.from_numpy(pi_im).type(torch.FloatTensor)
         images = images.unsqueeze(0)
+        images = images.to(device)
 
-        images = images.to('cuda')
         outputs = model.forward(images)
+
+        #
+        outputs = torch.exp(outputs)
         probs, labels = outputs.topk(topk)
 
         probs = probs.cpu().numpy()[0]
@@ -163,6 +169,7 @@ def predict(image_path, model, topk=5):
 
         inv_map = {v: k for k, v in model.class_to_idx.items()}
         classes = [inv_map[l] for l in labels]
+
     return probs, classes
 
 if __name__ == '__main__':
